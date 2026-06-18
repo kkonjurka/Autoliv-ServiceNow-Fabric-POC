@@ -1,0 +1,385 @@
+model AutolivServiceNowSemanticModel
+    culture: en-US
+    description: Fabric semantic model for Autoliv ServiceNow ticket operations, SLA analysis, KB reuse, and scoped ontology export.
+
+table DimDate
+    column DateKey
+        dataType: int64
+    column Date
+        dataType: dateTime
+    column Year
+        dataType: int64
+    column Quarter
+        dataType: string
+    column MonthNumber
+        dataType: int64
+    column MonthName
+        dataType: string
+    column WeekOfYear
+        dataType: int64
+    column DayOfWeekName
+        dataType: string
+
+table DimUser
+    column UserKey
+        dataType: string
+    column FullName
+        dataType: string
+    column Email
+        dataType: string
+    column Department
+        dataType: string
+    column Title
+        dataType: string
+    column Location
+        dataType: string
+    column ManagerName
+        dataType: string
+
+table DimAssignmentGroup
+    column AssignmentGroupKey
+        dataType: string
+    column GroupName
+        dataType: string
+    column Description
+        dataType: string
+    column EscalationEmail
+        dataType: string
+    column SupportTier
+        dataType: string
+
+table DimCategory
+    column CategoryKey
+        dataType: string
+    column CategoryName
+        dataType: string
+    column SubcategoryName
+        dataType: string
+    column CategoryPath
+        dataType: string
+
+table DimBusinessService
+    column BusinessServiceKey
+        dataType: string
+    column BusinessServiceName
+        dataType: string
+    column ApplicationName
+        dataType: string
+    column ServiceDomain
+        dataType: string
+
+table DimPriority
+    column PriorityKey
+        dataType: string
+    column PriorityLabel
+        dataType: string
+    column PriorityRank
+        dataType: int64
+
+table DimState
+    column StateKey
+        dataType: string
+    column StateLabel
+        dataType: string
+    column StateGroup
+        dataType: string
+    column IsOpen
+        dataType: boolean
+    column IsResolved
+        dataType: boolean
+
+table DimResolutionCode
+    column ResolutionCodeKey
+        dataType: string
+    column ResolutionCode
+        dataType: string
+    column ResolutionFamily
+        dataType: string
+
+table DimKnowledgeArticle
+    column KnowledgeArticleKey
+        dataType: string
+    column ArticleNumber
+        dataType: string
+    column Title
+        dataType: string
+    column CategoryName
+        dataType: string
+    column Audience
+        dataType: string
+    column PublishedDate
+        dataType: dateTime
+    column UpdatedDate
+        dataType: dateTime
+
+table DimChangeRequest
+    column ChangeRequestKey
+        dataType: string
+    column ChangeNumber
+        dataType: string
+    column Title
+        dataType: string
+    column ChangeState
+        dataType: string
+    column RiskLevel
+        dataType: string
+    column PlannedStartDate
+        dataType: dateTime
+    column PlannedEndDate
+        dataType: dateTime
+    column ImplementedDate
+        dataType: dateTime
+
+table DimAssetType
+    column AssetTypeKey
+        dataType: string
+    column AssetClass
+        dataType: string
+    column ContentType
+        dataType: string
+    column ExtensionFamily
+        dataType: string
+
+table DimResolutionPattern
+    column ResolutionPatternKey
+        dataType: string
+    column PatternName
+        dataType: string
+    column PatternFamily
+        dataType: string
+    column ConfidenceBand
+        dataType: string
+
+table FactTickets
+    column TicketId
+        dataType: string
+    column TicketNumber
+        dataType: string
+    column OpenedDateKey
+        dataType: int64
+    column UpdatedDateKey
+        dataType: int64
+    column ResolvedDateKey
+        dataType: int64
+    column RequesterUserKey
+        dataType: string
+    column AssigneeUserKey
+        dataType: string
+    column AssignmentGroupKey
+        dataType: string
+    column CategoryKey
+        dataType: string
+    column BusinessServiceKey
+        dataType: string
+    column PriorityKey
+        dataType: string
+    column StateKey
+        dataType: string
+    column ResolutionCodeKey
+        dataType: string
+    column FollowUpRequired
+        dataType: boolean
+    column ResolutionDurationHours
+        dataType: double
+    column OpenAgeDays
+        dataType: double
+    column OpenAgeBucket
+        dataType: string
+    column ReopenCount
+        dataType: int64
+
+    measure 'Ticket Volume' = COUNTROWS ( FactTickets )
+        formatString: 0
+        description: Count of tickets in current filter context.
+
+    measure 'Open Ticket Count' =
+        CALCULATE (
+            [Ticket Volume],
+            KEEPFILTERS ( DimState[IsOpen] = TRUE () )
+        )
+        formatString: 0
+        description: Count of tickets in open, in-progress, or on-hold states.
+
+    measure 'Backlog by Priority' = [Open Ticket Count]
+        formatString: 0
+        description: Open ticket count used with the priority dimension.
+
+    measure 'Resolved Ticket Count' =
+        CALCULATE (
+            [Ticket Volume],
+            KEEPFILTERS ( DimState[IsResolved] = TRUE () )
+        )
+        formatString: 0
+        description: Count of resolved or closed tickets.
+
+    measure 'Reopened Ticket Count' =
+        CALCULATE (
+            DISTINCTCOUNT ( FactTickets[TicketId] ),
+            FILTER ( FactTickets, FactTickets[ReopenCount] > 0 )
+        )
+        formatString: 0
+        description: Tickets with one or more reopen events.
+
+    measure 'Avg Resolution Time (Hours)' =
+        AVERAGEX (
+            FILTER ( FactTickets, NOT ISBLANK ( FactTickets[ResolvedDateKey] ) ),
+            FactTickets[ResolutionDurationHours]
+        )
+        formatString: 0.0
+        description: Average hours from opened to resolved for resolved tickets.
+
+    measure 'Reopen Rate' =
+        DIVIDE ( [Reopened Ticket Count], [Resolved Ticket Count] )
+        formatString: 0.0%
+        description: Reopened resolved tickets divided by total resolved tickets.
+
+    measure 'Aging Open Tickets' = [Open Ticket Count]
+        formatString: 0
+        description: Open ticket count intended for slicing by OpenAgeBucket.
+
+    measure 'Open Ticket Age (Days)' =
+        AVERAGEX (
+            FILTER ( FactTickets, RELATED ( DimState[IsOpen] ) = TRUE () ),
+            FactTickets[OpenAgeDays]
+        )
+        formatString: 0.0
+        description: Average age in days for currently open tickets.
+
+table FactSla
+    column SlaId
+        dataType: string
+    column TicketId
+        dataType: string
+    column SlaName
+        dataType: string
+    column Stage
+        dataType: string
+    column DueDateKey
+        dataType: int64
+    column TargetHours
+        dataType: double
+    column ElapsedHours
+        dataType: double
+    column BreachedFlag
+        dataType: boolean
+
+    measure 'SLA Breach Count' =
+        CALCULATE (
+            DISTINCTCOUNT ( FactSla[TicketId] ),
+            KEEPFILTERS ( FactSla[BreachedFlag] = TRUE () )
+        )
+        formatString: 0
+        description: Distinct ticket count with one or more breached SLA records.
+
+table BridgeTicketKnowledgeArticle
+    column TicketId
+        dataType: string
+    column KnowledgeArticleKey
+        dataType: string
+    column RelevanceReason
+        dataType: string
+
+    measure 'KB Article Reuse Count' = COUNTROWS ( BridgeTicketKnowledgeArticle )
+        formatString: 0
+        description: Number of ticket-to-KB relationships in current filter context.
+
+table BridgeTicketResolutionPattern
+    column TicketId
+        dataType: string
+    column ResolutionPatternKey
+        dataType: string
+    column ExtractionSource
+        dataType: string
+    column ExtractionConfidence
+        dataType: double
+
+    measure 'Resolution Pattern Frequency' =
+        DISTINCTCOUNT ( BridgeTicketResolutionPattern[TicketId] )
+        formatString: 0
+        description: Distinct ticket count associated to a resolution pattern.
+
+table BridgeTicketAsset
+    column TicketId
+        dataType: string
+    column AssetId
+        dataType: string
+    column AssetTypeKey
+        dataType: string
+    column AssetClass
+        dataType: string
+
+table BridgeTicketChange
+    column TicketId
+        dataType: string
+    column ChangeRequestKey
+        dataType: string
+    column RelationshipType
+        dataType: string
+
+relationship FactTickets_OpenedDate
+    fromColumn: FactTickets[OpenedDateKey]
+    toColumn: DimDate[DateKey]
+
+relationship FactTickets_Requester
+    fromColumn: FactTickets[RequesterUserKey]
+    toColumn: DimUser[UserKey]
+
+relationship FactTickets_AssignmentGroup
+    fromColumn: FactTickets[AssignmentGroupKey]
+    toColumn: DimAssignmentGroup[AssignmentGroupKey]
+
+relationship FactTickets_Category
+    fromColumn: FactTickets[CategoryKey]
+    toColumn: DimCategory[CategoryKey]
+
+relationship FactTickets_BusinessService
+    fromColumn: FactTickets[BusinessServiceKey]
+    toColumn: DimBusinessService[BusinessServiceKey]
+
+relationship FactTickets_Priority
+    fromColumn: FactTickets[PriorityKey]
+    toColumn: DimPriority[PriorityKey]
+
+relationship FactTickets_State
+    fromColumn: FactTickets[StateKey]
+    toColumn: DimState[StateKey]
+
+relationship FactTickets_ResolutionCode
+    fromColumn: FactTickets[ResolutionCodeKey]
+    toColumn: DimResolutionCode[ResolutionCodeKey]
+
+relationship FactSla_Ticket
+    fromColumn: FactSla[TicketId]
+    toColumn: FactTickets[TicketId]
+
+relationship TicketKb_Ticket
+    fromColumn: BridgeTicketKnowledgeArticle[TicketId]
+    toColumn: FactTickets[TicketId]
+
+relationship TicketKb_Article
+    fromColumn: BridgeTicketKnowledgeArticle[KnowledgeArticleKey]
+    toColumn: DimKnowledgeArticle[KnowledgeArticleKey]
+
+relationship TicketPattern_Ticket
+    fromColumn: BridgeTicketResolutionPattern[TicketId]
+    toColumn: FactTickets[TicketId]
+
+relationship TicketPattern_Pattern
+    fromColumn: BridgeTicketResolutionPattern[ResolutionPatternKey]
+    toColumn: DimResolutionPattern[ResolutionPatternKey]
+
+relationship TicketAsset_Ticket
+    fromColumn: BridgeTicketAsset[TicketId]
+    toColumn: FactTickets[TicketId]
+
+relationship TicketAsset_AssetType
+    fromColumn: BridgeTicketAsset[AssetTypeKey]
+    toColumn: DimAssetType[AssetTypeKey]
+
+relationship TicketChange_Ticket
+    fromColumn: BridgeTicketChange[TicketId]
+    toColumn: FactTickets[TicketId]
+
+relationship TicketChange_Change
+    fromColumn: BridgeTicketChange[ChangeRequestKey]
+    toColumn: DimChangeRequest[ChangeRequestKey]

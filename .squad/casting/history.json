@@ -1,0 +1,13 @@
+{
+  "universe_usage_history": [],
+  "assignment_cast_snapshots": {
+  "assignments": [
+    {
+      "assignment_id": "firefly-2026-06-17",
+      "universe": "Firefly",
+      "created_at": "2026-06-17T14:42:33Z",
+      "agents": ["mal", "kaylee", "wash", "inara", "book", "river", "jayne", "zoe", "simon"]
+    }
+  ]
+}
+}
