@@ -55,7 +55,7 @@ Recommended credential approach:
 | Scenario | Credential location | Notes |
 | --- | --- | --- |
 | Local developer deployment | Azure CLI login plus `.env` for resource names | Prefer `az login`; avoid storing client secrets locally unless needed |
-| CI/CD deployment | GitHub Actions secrets or Azure DevOps variable groups | Store `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and federated credential or secret outside git |
+| CI/CD deployment | GitHub Actions secrets | Store `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and federated credential or secret outside git |
 | Demo API runtime configuration | Azure Container Apps secrets/environment variables | Store API keys and runtime settings in ACA configuration, not source code |
 | Fabric/Foundry configuration | Secure deployment variables or service connections | Do not place Fabric tokens or Foundry keys in committed files |
 
@@ -88,7 +88,7 @@ az login
 az account set --subscription $env:AZURE_SUBSCRIPTION_ID
 ```
 
-For CI/CD, use GitHub Actions secrets or Azure DevOps service connections instead of local interactive login.
+For CI/CD, use GitHub Actions secrets instead of local interactive login.
 
 ### 2. Build the mock ServiceNow API
 
@@ -132,44 +132,71 @@ For CI/CD, use GitHub Actions secrets or Azure DevOps service connections instea
 
 ### 7. Deploy the semantic model
 
-The semantic model is already defined as TMDL files in `servicenow-demo/ServiceNow_SemanticModel.SemanticModel/`.
+Since Git integration is not available, deploy the semantic model manually by creating it in the Fabric portal.
+
+The TMDL files in `servicenow-demo/ServiceNow_SemanticModel.SemanticModel/` serve as reference for the schema, tables, relationships, and DAX measures.
 
 **Step-by-step deployment:**
 
-1. **Sync to Fabric via Git integration (Azure DevOps):**
-   - In the Fabric portal, open your workspace → Settings → Git integration.
-   - Connect your Azure DevOps repo (branch: `main`, folder: `/servicenow-demo`).
-   - Click **Sync** — the `ServiceNow_SemanticModel` item appears in the workspace.
+1. **Create the semantic model:**
+   - In the Fabric portal, open your workspace.
+   - Go to your Lakehouse → click **New semantic model**.
+   - Name it: `ServiceNow_SemanticModel`.
+   - Select the curated tables: `incidents`, `categories`, `assignment_groups`, `kb_articles`, `slas`, `incident_kb_links`.
+   - Click **Confirm** to create the model.
 
-2. **Attach the Lakehouse:**
-   - Open the semantic model in the workspace.
-   - In **Model view** → **Properties** → **Data source**, connect it to your default Lakehouse.
-   - The model uses DirectLake mode — it reads directly from the Delta tables created by notebook 02.
+2. **Define relationships:**
+   - Open the semantic model → **Model view** → **Diagram view**.
+   - Create the following relationships by dragging between matching columns:
+     - `incidents.category_id` → `categories.category_id`
+     - `incidents.assignment_group_id` → `assignment_groups.group_id`
+     - `slas.incident_id` → `incidents.incident_id`
+     - `incident_kb_links.incident_id` → `incidents.incident_id`
+     - `incident_kb_links.kb_id` → `kb_articles.kb_id`
 
-3. **Refresh the model:**
-   - Click **Refresh now** to validate that all 6 tables (`incidents`, `categories`, `assignment_groups`, `kb_articles`, `slas`, `incident_kb_links`) resolve correctly.
+3. **Add DAX measures:**
+   - In the model, go to the `incidents` table.
+   - Add these measures (reference the TMDL file for exact DAX formulas):
+     - **Ticket Volume**: `COUNTA(incidents[incident_id])`
+     - **Open Ticket Count**: `CALCULATE([Ticket Volume], incidents[state] = "Open")`
+     - **Backlog by Priority**: Create by grouping by priority
+     - **Average Resolution Time**: Calculate average of resolved_at minus opened_at
+     - **SLA Breach Count**: `CALCULATE([Ticket Volume], slas[breached] = TRUE)`
+     - **Aging Open Tickets**: Count of open incidents past a threshold date
+
+4. **Verify the model:**
+   - Click **Refresh now** to validate that all 6 tables resolve correctly.
    - Check the **Refresh history** tab — status should be "Completed".
-
-4. **Verify measures:**
-   - Open the model → Measures tab. You should see: Ticket Volume, Open Ticket Count, Backlog by Priority, Average Resolution Time, SLA Breach Count, Aging Open Tickets.
-   - Click any measure → **New quick measure** or use the DAX query view to test.
-
-5. **Validate relationships:**
-   - In **Model view**, confirm relationship lines between: incidents↔categories, incidents↔assignment_groups, slas↔incidents, incident_kb_links↔incidents, incident_kb_links↔kb_articles.
+   - Open the model → **Measures** tab and verify all 6 measures appear.
+   - In **Diagram view**, confirm relationship lines between all connected tables.
 
 ### 8. Deploy the ontology layer
 
-The ontology is implemented as a Fabric notebook (`servicenow-demo/04_Ontology_Graph.Notebook/`).
+Since Git integration is not available, deploy the ontology notebook manually by creating it in the Fabric portal and copying the content.
 
 **Step-by-step deployment:**
 
-1. **Sync notebook to Fabric** (same Git integration as step 7 — it arrives automatically).
-2. **Attach the default Lakehouse** in the notebook's Explorer pane.
-3. **Run the notebook** — it reads curated tables and writes two new Delta tables:
-   - `ontology_nodes` — entity nodes (Incident, User, AssignmentGroup, Category, KnowledgeArticle, Attachment, ResolutionPattern)
-   - `ontology_edges` — relationships between entities (OPENED_BY, ASSIGNED_TO_GROUP, BELONGS_TO_CATEGORY, REFERENCES_KB, etc.)
-4. **Verify output:**
-   - In Lakehouse Explorer → Tables, confirm `ontology_nodes` and `ontology_edges` appear.
+1. **Create a new notebook:**
+   - In the Fabric portal, open your workspace.
+   - Click **New** → **Notebook**.
+   - Name it exactly: `04_Ontology_Graph`.
+
+2. **Copy the notebook content:**
+   - Navigate to `servicenow-demo/04_Ontology_Graph.Notebook/notebook-content.py` in the repo.
+   - Copy the entire Python content.
+   - In the notebook editor, switch to **Edit** mode.
+   - Replace any default content with the copied code.
+
+3. **Attach the Lakehouse:**
+   - In the notebook's Explorer pane (right side), attach the default Lakehouse that contains your curated tables.
+
+4. **Run the notebook:**
+   - Execute the cells — the notebook reads curated tables and writes two new Delta tables:
+     - `ontology_nodes` — entity nodes (Incident, User, AssignmentGroup, Category, KnowledgeArticle, Attachment, ResolutionPattern)
+     - `ontology_edges` — relationships between entities (OPENED_BY, ASSIGNED_TO_GROUP, BELONGS_TO_CATEGORY, REFERENCES_KB, etc.)
+
+5. **Verify output:**
+   - In Lakehouse Explorer → **Tables**, confirm `ontology_nodes` and `ontology_edges` appear.
    - Run `SELECT node_type, COUNT(*) FROM ontology_nodes GROUP BY node_type` in a SQL endpoint to validate.
 
 ### 9. Deploy the Fabric Data Agent
