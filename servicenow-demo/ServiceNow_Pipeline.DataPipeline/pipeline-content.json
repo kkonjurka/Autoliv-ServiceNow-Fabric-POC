@@ -1,0 +1,76 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "name": "Validate API Connectivity",
+        "type": "TridentNotebook",
+        "dependsOn": [],
+        "policy": {
+          "timeout": "0.02:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30
+        },
+        "typeProperties": {
+          "notebookId": "",
+          "workspaceId": "",
+          "notebook": {
+            "referenceName": "00_API_Demo"
+          }
+        }
+      },
+      {
+        "name": "Ingest Raw ServiceNow Data",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "Validate API Connectivity",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30
+        },
+        "typeProperties": {
+          "notebookId": "",
+          "workspaceId": "",
+          "notebook": {
+            "referenceName": "01_Ingest_Raw"
+          }
+        }
+      },
+      {
+        "name": "Transform Curated Delta Tables",
+        "type": "TridentNotebook",
+        "dependsOn": [
+          {
+            "activity": "Ingest Raw ServiceNow Data",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30
+        },
+        "typeProperties": {
+          "notebookId": "",
+          "workspaceId": "",
+          "notebook": {
+            "referenceName": "02_Transform_Curated"
+          }
+        }
+      }
+    ],
+    "annotations": [
+      "servicenow-demo",
+      "fabric-git-integration",
+      "optional-api-validation"
+    ]
+  }
+}
