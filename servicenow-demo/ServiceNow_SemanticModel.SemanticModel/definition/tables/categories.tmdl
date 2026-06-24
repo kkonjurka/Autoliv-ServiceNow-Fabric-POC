@@ -1,0 +1,31 @@
+table categories
+    lineageTag: 9174df5d-97d2-4771-a2a4-75766927eb35
+    sourceLineageTag: [dbo].[categories]
+
+    column category_id
+        dataType: string
+        lineageTag: 6e83f8b8-fb34-44d8-8ff2-8dc3fb6e4200
+        sourceLineageTag: category_id
+        sourceColumn: category_id
+        summarizeBy: none
+
+    column name
+        dataType: string
+        lineageTag: 5b9192b3-3d2d-4cf6-b647-0c05bc7d28f2
+        sourceLineageTag: name
+        sourceColumn: name
+        summarizeBy: none
+
+    column subcategory
+        dataType: string
+        lineageTag: b66a43e4-49fe-4fe8-a244-e0edb615981d
+        sourceLineageTag: subcategory
+        sourceColumn: subcategory
+        summarizeBy: none
+
+    partition categories = entity
+        mode: directLake
+        source
+            entityName: categories
+            schemaName: dbo
+            expressionSource: DatabaseQuery

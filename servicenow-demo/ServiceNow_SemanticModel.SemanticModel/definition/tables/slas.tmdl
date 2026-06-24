@@ -1,0 +1,57 @@
+table slas
+    lineageTag: 2f85d086-3d43-4f99-acbc-8a4c74bf3980
+    sourceLineageTag: [dbo].[slas]
+
+    column sla_id
+        dataType: string
+        lineageTag: 36a7975c-e335-4de5-af0d-75e90fa4381b
+        sourceLineageTag: sla_id
+        sourceColumn: sla_id
+        summarizeBy: none
+
+    column incident_id
+        dataType: string
+        lineageTag: 92f1f547-d8eb-4293-91ef-eb1956dba498
+        sourceLineageTag: incident_id
+        sourceColumn: incident_id
+        summarizeBy: none
+
+    column name
+        dataType: string
+        lineageTag: 8a124a20-c087-4e9e-b191-59de9cb1fb37
+        sourceLineageTag: name
+        sourceColumn: name
+        summarizeBy: none
+
+    column stage
+        dataType: string
+        lineageTag: 8553d41f-89e3-43ba-b387-8d284334bad0
+        sourceLineageTag: stage
+        sourceColumn: stage
+        summarizeBy: none
+
+    column target_hours
+        dataType: double
+        lineageTag: 8995c9cb-2d9b-4a50-8518-3cc345c2d4d8
+        sourceLineageTag: target_hours
+        sourceColumn: target_hours
+
+    column elapsed_hours
+        dataType: double
+        lineageTag: c5d0b659-03ba-4492-8e54-5884b68eed2b
+        sourceLineageTag: elapsed_hours
+        sourceColumn: elapsed_hours
+
+    column breached
+        dataType: boolean
+        lineageTag: 48fb3b5b-07cd-4a72-9df2-fcb503500339
+        sourceLineageTag: breached
+        sourceColumn: breached
+        summarizeBy: none
+
+    partition slas = entity
+        mode: directLake
+        source
+            entityName: slas
+            schemaName: dbo
+            expressionSource: DatabaseQuery

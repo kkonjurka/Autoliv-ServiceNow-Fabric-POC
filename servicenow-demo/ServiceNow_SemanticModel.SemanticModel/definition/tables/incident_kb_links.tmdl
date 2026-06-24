@@ -1,0 +1,24 @@
+table incident_kb_links
+    lineageTag: 3e8a16aa-18ea-43c8-b3f6-c68d3f87e12e
+    sourceLineageTag: [dbo].[incident_kb_links]
+
+    column incident_id
+        dataType: string
+        lineageTag: 51d7d241-64aa-48c6-a621-2e56aa0b9930
+        sourceLineageTag: incident_id
+        sourceColumn: incident_id
+        summarizeBy: none
+
+    column kb_article_id
+        dataType: string
+        lineageTag: 7723e1f0-6ac7-4e69-bcec-674f0d72c59d
+        sourceLineageTag: kb_article_id
+        sourceColumn: kb_article_id
+        summarizeBy: none
+
+    partition incident_kb_links = entity
+        mode: directLake
+        source
+            entityName: incident_kb_links
+            schemaName: dbo
+            expressionSource: DatabaseQuery

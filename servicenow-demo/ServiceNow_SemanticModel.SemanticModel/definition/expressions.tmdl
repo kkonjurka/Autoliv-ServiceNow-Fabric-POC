@@ -1,0 +1,7 @@
+expression DatabaseQuery =
+    let
+        database = Sql.Database(null, null)
+    in
+        database
+    lineageTag: 9a44aa6c-2a8b-4c79-88af-6a0b53d1d110
+    queryGroup: 'DirectLake'

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "04_Ontology_Graph",
+    "description": "Builds ontology node and edge Delta tables from curated ServiceNow tables."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "3c9d02b0-c93a-4adf-bf86-58235018d6e1"
+  }
+}

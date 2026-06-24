@@ -1,0 +1,38 @@
+table assignment_groups
+    lineageTag: a332cf65-3db8-4b45-a932-85f4f7b7d2d5
+    sourceLineageTag: [dbo].[assignment_groups]
+
+    column assignment_group_id
+        dataType: string
+        lineageTag: 1ae68d54-df7a-4df0-8653-f334a572fb1f
+        sourceLineageTag: assignment_group_id
+        sourceColumn: assignment_group_id
+        summarizeBy: none
+
+    column name
+        dataType: string
+        lineageTag: 8ba9c69b-857d-4f9f-8e16-9d828975df5c
+        sourceLineageTag: name
+        sourceColumn: name
+        summarizeBy: none
+
+    column description
+        dataType: string
+        lineageTag: a16cdeaa-cf5f-45bf-83df-79289f0309ea
+        sourceLineageTag: description
+        sourceColumn: description
+        summarizeBy: none
+
+    column escalation_email
+        dataType: string
+        lineageTag: 73542ad0-f783-4ad4-b2c5-fdbcd736c2bd
+        sourceLineageTag: escalation_email
+        sourceColumn: escalation_email
+        summarizeBy: none
+
+    partition assignment_groups = entity
+        mode: directLake
+        source
+            entityName: assignment_groups
+            schemaName: dbo
+            expressionSource: DatabaseQuery

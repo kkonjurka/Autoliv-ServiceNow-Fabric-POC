@@ -1,0 +1,170 @@
+table incidents
+    lineageTag: 095b2180-11d0-4701-9f86-dd1572f1db7f
+    sourceLineageTag: [dbo].[incidents]
+
+    column incident_id
+        dataType: string
+        lineageTag: e7d53742-74ff-4b31-8bd5-3cf37f8b5726
+        sourceLineageTag: incident_id
+        sourceColumn: incident_id
+        summarizeBy: none
+
+    column number
+        dataType: string
+        lineageTag: 67b5a655-a35e-4fa3-b29e-2517383c26e5
+        sourceLineageTag: number
+        sourceColumn: number
+        summarizeBy: none
+
+    column short_description
+        dataType: string
+        lineageTag: e6f37fe9-0618-41b2-ae36-06d3b5de80eb
+        sourceLineageTag: short_description
+        sourceColumn: short_description
+        summarizeBy: none
+
+    column state
+        dataType: string
+        lineageTag: 0c1048c6-38fb-4d6d-89ec-37c2970c18ff
+        sourceLineageTag: state
+        sourceColumn: state
+        summarizeBy: none
+
+    column priority
+        dataType: string
+        lineageTag: 9ee81e76-c8d7-4cc8-8465-ff93af4071ee
+        sourceLineageTag: priority
+        sourceColumn: priority
+        summarizeBy: none
+
+    column assignment_group_id
+        dataType: string
+        lineageTag: 8f1bf853-04c7-4b53-b331-1f371ad9d7f1
+        sourceLineageTag: assignment_group_id
+        sourceColumn: assignment_group_id
+        summarizeBy: none
+
+    column category_id
+        dataType: string
+        lineageTag: c1b57746-00cb-40ae-945a-bbffadca930f
+        sourceLineageTag: category_id
+        sourceColumn: category_id
+        summarizeBy: none
+
+    column opened_at
+        dataType: dateTime
+        lineageTag: 89f429d2-fd06-4b20-bcf9-7c6342c7d3a8
+        sourceLineageTag: opened_at
+        sourceColumn: opened_at
+        summarizeBy: none
+
+    column resolved_at
+        dataType: dateTime
+        lineageTag: 9dc95bf4-76f8-41c5-8225-df87b0c5c3e5
+        sourceLineageTag: resolved_at
+        sourceColumn: resolved_at
+        summarizeBy: none
+
+    column closed_at
+        dataType: dateTime
+        lineageTag: e7d65f78-a88f-4635-ad1c-7e8ef04f8ab5
+        sourceLineageTag: closed_at
+        sourceColumn: closed_at
+        summarizeBy: none
+
+    column opened_by_id
+        dataType: string
+        lineageTag: f0a190e5-e091-4b9d-b620-a0df09217b77
+        sourceLineageTag: opened_by_id
+        sourceColumn: opened_by_id
+        summarizeBy: none
+
+    column opened_by_name
+        dataType: string
+        lineageTag: 183907f8-a5f8-480c-b7a2-ea5c99153d48
+        sourceLineageTag: opened_by_name
+        sourceColumn: opened_by_name
+        summarizeBy: none
+
+    column assigned_to_id
+        dataType: string
+        lineageTag: 5b008236-731d-4de6-bf76-ff42ff2d4c8b
+        sourceLineageTag: assigned_to_id
+        sourceColumn: assigned_to_id
+        summarizeBy: none
+
+    column assigned_to_name
+        dataType: string
+        lineageTag: 8496253d-4d36-46ba-9f46-5475825e6426
+        sourceLineageTag: assigned_to_name
+        sourceColumn: assigned_to_name
+        summarizeBy: none
+
+    column description_clean
+        dataType: string
+        lineageTag: 9ed7fd7b-e7c6-4429-b14d-f5ed15a10979
+        sourceLineageTag: description_clean
+        sourceColumn: description_clean
+        summarizeBy: none
+
+    column work_notes_clean
+        dataType: string
+        lineageTag: 525e15fa-bebc-4c57-8f84-24533400d32d
+        sourceLineageTag: work_notes_clean
+        sourceColumn: work_notes_clean
+        summarizeBy: none
+
+    column resolution_notes_clean
+        dataType: string
+        lineageTag: 2d1a3c5c-8717-4bc4-9336-54bca2267b8f
+        sourceLineageTag: resolution_notes_clean
+        sourceColumn: resolution_notes_clean
+        summarizeBy: none
+
+    measure 'Ticket Volume' = COUNTROWS ( incidents )
+        formatString: 0
+        description: Total incident count in the current filter context.
+
+    measure 'Open Ticket Count' =
+        CALCULATE (
+            COUNTROWS ( incidents ),
+            incidents[state] IN { "New", "In Progress", "On Hold" }
+        )
+        formatString: 0
+        description: Count of incidents currently in an open workflow state.
+
+    measure 'Backlog by Priority' = [Open Ticket Count]
+        formatString: 0
+        description: Open backlog measure intended for use with the incident priority column.
+
+    measure 'Average Resolution Time' =
+        AVERAGEX (
+            FILTER ( incidents, NOT ISBLANK ( incidents[resolved_at] ) ),
+            DATEDIFF ( incidents[opened_at], incidents[resolved_at], HOUR )
+        )
+        formatString: 0.0
+        description: Average resolution time in hours for resolved incidents.
+
+    measure 'SLA Breach Count' =
+        CALCULATE (
+            COUNTROWS ( slas ),
+            slas[breached] = TRUE
+        )
+        formatString: 0
+        description: Count of breached SLA records linked to the visible incidents.
+
+    measure 'Aging Open Tickets' =
+        CALCULATE (
+            COUNTROWS ( incidents ),
+            incidents[state] IN { "New", "In Progress", "On Hold" },
+            FILTER ( incidents, DATEDIFF ( incidents[opened_at], TODAY (), DAY ) > 7 )
+        )
+        formatString: 0
+        description: Open incidents older than seven days.
+
+    partition incidents = entity
+        mode: directLake
+        source
+            entityName: incidents
+            schemaName: dbo
+            expressionSource: DatabaseQuery

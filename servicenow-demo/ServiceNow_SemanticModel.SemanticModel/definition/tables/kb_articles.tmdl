@@ -1,0 +1,87 @@
+table kb_articles
+    lineageTag: 8f34049f-1e6f-4ff8-87ca-a42af9b9101a
+    sourceLineageTag: [dbo].[kb_articles]
+
+    column kb_article_id
+        dataType: string
+        lineageTag: 60343005-b974-4ef8-a718-c4f1af75685f
+        sourceLineageTag: kb_article_id
+        sourceColumn: kb_article_id
+        summarizeBy: none
+
+    column kb_article_number
+        dataType: string
+        lineageTag: 1f4af79c-d674-49d3-b6b3-f7af62695c4d
+        sourceLineageTag: kb_article_number
+        sourceColumn: kb_article_number
+        summarizeBy: none
+
+    column title
+        dataType: string
+        lineageTag: 0bbd70b0-6cf7-41f3-b40d-4ba064b7f0ca
+        sourceLineageTag: title
+        sourceColumn: title
+        summarizeBy: none
+
+    column body_clean
+        dataType: string
+        lineageTag: d2c5e0b4-4d76-45b8-89e0-c266d9d32de3
+        sourceLineageTag: body_clean
+        sourceColumn: body_clean
+        summarizeBy: none
+
+    column published_date
+        dataType: dateTime
+        lineageTag: 5ea67a07-ac12-48b1-a565-8aeb31e6e012
+        sourceLineageTag: published_date
+        sourceColumn: published_date
+        summarizeBy: none
+
+    column updated_date
+        dataType: dateTime
+        lineageTag: a0cf8f46-2683-42e5-a630-e693ad886a15
+        sourceLineageTag: updated_date
+        sourceColumn: updated_date
+        summarizeBy: none
+
+    column category_id
+        dataType: string
+        lineageTag: 8cd64b61-8cba-4ed7-8334-2416f6cba4cc
+        sourceLineageTag: category_id
+        sourceColumn: category_id
+        summarizeBy: none
+
+    column category_name
+        dataType: string
+        lineageTag: 632baea2-b1a3-4ce9-b630-762f34b6c9a0
+        sourceLineageTag: category_name
+        sourceColumn: category_name
+        summarizeBy: none
+
+    column category_subcategory
+        dataType: string
+        lineageTag: 512cbca4-284c-4178-9b7a-a6e9e1261046
+        sourceLineageTag: category_subcategory
+        sourceColumn: category_subcategory
+        summarizeBy: none
+
+    column audience
+        dataType: string
+        lineageTag: 4ca91144-75b6-4d0e-b5e3-7a1ebd8a41b7
+        sourceLineageTag: audience
+        sourceColumn: audience
+        summarizeBy: none
+
+    column keywords
+        dataType: string
+        lineageTag: 6520c6d3-e3af-4d44-acb6-f80ec17d9202
+        sourceLineageTag: keywords
+        sourceColumn: keywords
+        summarizeBy: none
+
+    partition kb_articles = entity
+        mode: directLake
+        source
+            entityName: kb_articles
+            schemaName: dbo
+            expressionSource: DatabaseQuery

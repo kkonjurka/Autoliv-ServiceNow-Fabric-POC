@@ -1,0 +1,16 @@
+database
+    compatibilityLevel: 1604
+
+model ServiceNow_SemanticModel
+    culture: en-US
+    defaultPowerBIDataSourceVersion: powerBI_V3
+    sourceQueryCulture: en-US
+
+annotation PBI_QueryOrder = ["DatabaseQuery"]
+
+ref table incidents
+ref table categories
+ref table assignment_groups
+ref table kb_articles
+ref table slas
+ref table incident_kb_links
