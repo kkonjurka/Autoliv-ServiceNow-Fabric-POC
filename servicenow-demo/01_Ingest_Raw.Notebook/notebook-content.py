@@ -48,6 +48,19 @@ class ManifestEntry:
     extracted_at_utc: str
 
 
+def safe_create_df(items: list[dict[str, Any]]):
+    """Create a Spark DataFrame from nested API rows without brittle schema inference."""
+    json_rows = [json.dumps(item) for item in items]
+    return spark.read.json(spark.sparkContext.parallelize(json_rows))
+
+
+def overwrite_delta_table(items: list[dict[str, Any]], table_name: str) -> None:
+    """Persist one raw API dataset to an overwriteable Delta table in the Lakehouse."""
+    if not items:
+        raise ValueError(f"No records were available to write {table_name}.")
+    safe_create_df(items).write.mode("overwrite").format("delta").saveAsTable(table_name)
+
+
 def _notebook_fs():
     """Return Fabric's filesystem helper when running in a notebook, else None locally."""
     try:
@@ -134,11 +147,13 @@ def ingest_paginated_collection(
     return items, manifest
 
 
-def ingest_incident_details(incident_ids: Iterable[str]) -> list[ManifestEntry]:
+def ingest_incident_details(incident_ids: Iterable[str]) -> tuple[list[dict[str, Any]], list[ManifestEntry]]:
     """Fetch and land the full detail payload for every incident ID collected from the list API."""
+    detail_payloads: list[dict[str, Any]] = []
     manifest: list[ManifestEntry] = []
     for incident_id in incident_ids:
         payload = fetch_json(f"/incidents/{incident_id}")
+        detail_payloads.append(payload)
         landed_path = write_json_payload(detail_output_path("incidents", incident_id), payload)
         manifest.append(
             ManifestEntry(
@@ -152,7 +167,7 @@ def ingest_incident_details(incident_ids: Iterable[str]) -> list[ManifestEntry]:
                 extracted_at_utc=LOAD_TS_UTC.isoformat(),
             )
         )
-    return manifest
+    return detail_payloads, manifest
 
 
 def write_manifest_table(spark: SparkSession, manifest_entries: list[ManifestEntry]) -> None:
@@ -213,7 +228,7 @@ incident_summaries, incident_manifest = ingest_paginated_collection(
     dataset_name="incidents",
     endpoint="/incidents",
 )
-incident_detail_manifest = ingest_incident_details(item["id"] for item in incident_summaries)
+incident_details, incident_detail_manifest = ingest_incident_details(item["id"] for item in incident_summaries)
 
 # These datasets supply the KB content and file metadata used by later curated transforms.
 kb_articles, kb_manifest = ingest_paginated_collection(
@@ -232,6 +247,12 @@ documents, document_manifest = ingest_paginated_collection(
     dataset_name="documents",
     endpoint="/documents",
 )
+
+# Persist the raw API entities as Delta tables so Lakehouse Explorer shows each landed stage.
+overwrite_delta_table(incident_summaries, "raw_incidents_list")
+overwrite_delta_table(incident_details, "raw_incidents_detail")
+overwrite_delta_table(kb_articles, "raw_kb_articles")
+overwrite_delta_table(attachments, "raw_attachments")
 
 # Persist one manifest entry per landed file so the pipeline has an auditable load ledger.
 write_manifest_table(
@@ -317,6 +338,25 @@ if "displayHTML" in globals():
     )
 
 print(summary_message)
+
+# CELL ********************
+
+# ## Review the persisted raw Delta tables
+# This cell confirms the raw notebook wrote Delta tables alongside the JSON files and shows
+# the row counts that should now appear under the Lakehouse Explorer Tables experience.
+
+raw_table_counts_df = spark.createDataFrame(
+    [
+        ("raw_attachments", spark.table("raw_attachments").count()),
+        ("raw_incidents_detail", spark.table("raw_incidents_detail").count()),
+        ("raw_incidents_list", spark.table("raw_incidents_list").count()),
+        ("raw_kb_articles", spark.table("raw_kb_articles").count()),
+    ],
+    ["table_name", "record_count"],
+).orderBy("table_name")
+
+print("Persisted raw table counts:")
+display(raw_table_counts_df)
 
 # METADATA ********************
 

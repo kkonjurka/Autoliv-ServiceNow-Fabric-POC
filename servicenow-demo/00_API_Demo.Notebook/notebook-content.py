@@ -66,6 +66,11 @@ def safe_create_df(items: list[dict[str, Any]]) -> DataFrame:
     return spark.read.json(spark.sparkContext.parallelize(json_rows))
 
 
+def overwrite_delta_table(df: DataFrame, table_name: str) -> None:
+    """Persist a notebook result to a Delta table in the attached Lakehouse."""
+    df.write.mode("overwrite").format("delta").saveAsTable(table_name)
+
+
 def field_inventory_df(endpoint_name: str, payload: dict[str, Any]) -> DataFrame:
     """Build a simple endpoint-to-field inventory from either list or detail payloads."""
     if "items" in payload and payload["items"]:
@@ -94,6 +99,20 @@ incident_pagination = incident_list_payload.get("pagination", {})
 if not incident_items:
     raise ValueError("The incidents list endpoint is reachable but returned no records for the smoke test.")
 incident_list_df = safe_create_df(incident_items)
+incident_list_sample_df = incident_list_df.select(
+    "id",
+    "number",
+    "short_description",
+    "state",
+    "priority",
+    "impact",
+    "urgency",
+    F.col("requester.full_name").alias("requester_name"),
+    F.col("assignee.full_name").alias("assignee_name"),
+    F.col("assignment_group.name").alias("assignment_group_name"),
+    "opened_at",
+    "updated_at",
+)
 
 print(
     f"Incidents list returned {len(incident_items)} records on page 1 "
@@ -102,23 +121,13 @@ print(
 print(f"Pagination metadata: {incident_pagination}")
 
 render_df(
-    incident_list_df.select(
-        "id",
-        "number",
-        "short_description",
-        "state",
-        "priority",
-        "impact",
-        "urgency",
-        F.col("requester.full_name").alias("requester_name"),
-        F.col("assignee.full_name").alias("assignee_name"),
-        F.col("assignment_group.name").alias("assignment_group_name"),
-        "opened_at",
-        "updated_at",
-    ),
+    incident_list_sample_df,
     "Incident list sample",
 )
 render_df(field_inventory_df("incidents_list", incident_list_payload), "Incident list field inventory", row_limit=50)
+
+# Persist the incident preview so the smoke-test sample stays visible in Lakehouse Explorer.
+overwrite_delta_table(incident_list_sample_df, "demo_incidents_sample")
 
 # Capture the list-endpoint result so the final summary can show one row per endpoint tested.
 api_summary_rows.append(
@@ -140,32 +149,36 @@ api_summary_rows.append(
 selected_incident_id = incident_items[0]["id"]
 incident_detail_payload, incident_detail_status = fetch_json(f"/incidents/{selected_incident_id}")
 incident_detail_df = safe_create_df([incident_detail_payload])
+incident_detail_summary_df = incident_detail_df.select(
+    "id",
+    "number",
+    "short_description",
+    "state",
+    "priority",
+    "impact",
+    "urgency",
+    F.col("requester.full_name").alias("requester_name"),
+    F.col("assignee.full_name").alias("assignee_name"),
+    F.col("assignment_group.name").alias("assignment_group_name"),
+    F.size("work_notes").alias("work_note_count"),
+    F.size("resolution_notes").alias("resolution_note_count"),
+    F.size("related_kb_articles").alias("related_kb_article_count"),
+    F.size("change_requests").alias("change_request_count"),
+    F.size("slas").alias("sla_count"),
+    F.size("attachments").alias("attachment_count"),
+    F.size("images").alias("image_count"),
+    F.size("documents").alias("document_count"),
+)
 
 print(f"Fetched detail for incident ID: {selected_incident_id}")
 
 render_df(
-    incident_detail_df.select(
-        "id",
-        "number",
-        "short_description",
-        "state",
-        "priority",
-        "impact",
-        "urgency",
-        F.col("requester.full_name").alias("requester_name"),
-        F.col("assignee.full_name").alias("assignee_name"),
-        F.col("assignment_group.name").alias("assignment_group_name"),
-        F.size("work_notes").alias("work_note_count"),
-        F.size("resolution_notes").alias("resolution_note_count"),
-        F.size("related_kb_articles").alias("related_kb_article_count"),
-        F.size("change_requests").alias("change_request_count"),
-        F.size("slas").alias("sla_count"),
-        F.size("attachments").alias("attachment_count"),
-        F.size("images").alias("image_count"),
-        F.size("documents").alias("document_count"),
-    ),
+    incident_detail_summary_df,
     "Incident detail summary",
 )
+
+# Persist the single-incident summary so the demo keeps one durable detail example.
+overwrite_delta_table(incident_detail_summary_df, "demo_incident_detail")
 
 # Expand the nested work note array so reviewers can see the raw note HTML and plain text fields.
 render_df(
@@ -223,6 +236,17 @@ kb_pagination = kb_payload.get("pagination", {})
 if not kb_items:
     raise ValueError("The KB articles endpoint is reachable but returned no records for the smoke test.")
 kb_df = safe_create_df(kb_items)
+kb_sample_df = kb_df.select(
+    "id",
+    "number",
+    "title",
+    "audience",
+    F.col("category.name").alias("category_name"),
+    F.col("category.subcategory").alias("category_subcategory"),
+    F.array_join("keywords", ", ").alias("keywords"),
+    "published_at",
+    "updated_at",
+)
 
 print(
     f"KB articles returned {len(kb_items)} records on page 1 "
@@ -231,20 +255,13 @@ print(
 print(f"Pagination metadata: {kb_pagination}")
 
 render_df(
-    kb_df.select(
-        "id",
-        "number",
-        "title",
-        "audience",
-        F.col("category.name").alias("category_name"),
-        F.col("category.subcategory").alias("category_subcategory"),
-        F.array_join("keywords", ", ").alias("keywords"),
-        "published_at",
-        "updated_at",
-    ),
+    kb_sample_df,
     "KB article sample",
 )
 render_df(field_inventory_df("kb_articles", kb_payload), "KB article field inventory", row_limit=50)
+
+# Persist the article preview so reviewers can revisit the smoke-test sample later.
+overwrite_delta_table(kb_sample_df, "demo_kb_articles_sample")
 
 # Record the KB endpoint result for the end-of-notebook smoke-test summary.
 api_summary_rows.append(
@@ -272,6 +289,18 @@ attachment_pagination = attachment_payload.get("pagination", {})
 if not attachment_items:
     raise ValueError("The attachments endpoint is reachable but returned no records for the smoke test.")
 attachment_df = safe_create_df(attachment_items)
+attachment_sample_df = attachment_df.select(
+    "id",
+    "incident_id",
+    "incident_number",
+    "file_name",
+    "content_type",
+    "file_size_kb",
+    "width_px",
+    "height_px",
+    "uploaded_at",
+    "mock_url",
+)
 
 print(
     f"Attachments returned {len(attachment_items)} records on page 1 "
@@ -280,21 +309,13 @@ print(
 print(f"Pagination metadata: {attachment_pagination}")
 
 render_df(
-    attachment_df.select(
-        "id",
-        "incident_id",
-        "incident_number",
-        "file_name",
-        "content_type",
-        "file_size_kb",
-        "width_px",
-        "height_px",
-        "uploaded_at",
-        "mock_url",
-    ),
+    attachment_sample_df,
     "Attachment sample",
 )
 render_df(field_inventory_df("attachments", attachment_payload), "Attachment field inventory", row_limit=50)
+
+# Persist the attachment preview so downstream demo reviews can inspect it in Explorer.
+overwrite_delta_table(attachment_sample_df, "demo_attachments_sample")
 
 # Record the attachment endpoint result so all API checks can be summarized together.
 api_summary_rows.append(
@@ -314,6 +335,7 @@ api_summary_rows.append(
 # quickly confirm connectivity, response status, and record counts at a glance.
 
 api_summary_df = spark.createDataFrame(pd.DataFrame(api_summary_rows))
+overwrite_delta_table(api_summary_df, "demo_api_summary")
 
 render_df(
     api_summary_df.select(
@@ -328,6 +350,26 @@ render_df(
 )
 
 print("Smoke test completed successfully.")
+
+# CELL ********************
+
+# ## Review the persisted demo Delta tables
+# This cell confirms every smoke-test table was written to the attached Lakehouse and shows
+# the row count visible in Lakehouse Explorer for each persisted demo dataset.
+
+demo_table_counts_df = spark.createDataFrame(
+    [
+        ("demo_api_summary", spark.table("demo_api_summary").count()),
+        ("demo_attachments_sample", spark.table("demo_attachments_sample").count()),
+        ("demo_incident_detail", spark.table("demo_incident_detail").count()),
+        ("demo_incidents_sample", spark.table("demo_incidents_sample").count()),
+        ("demo_kb_articles_sample", spark.table("demo_kb_articles_sample").count()),
+    ],
+    ["table_name", "record_count"],
+).orderBy("table_name")
+
+print("Persisted demo table counts:")
+display(demo_table_counts_df)
 
 # METADATA ********************
 
