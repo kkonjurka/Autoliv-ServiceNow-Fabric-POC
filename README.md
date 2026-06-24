@@ -130,14 +130,82 @@ For CI/CD, use GitHub Actions secrets or Azure DevOps service connections instea
 5. Transform raw data into curated Fabric tables.
 6. Validate row counts, relationships, and cleaned text outputs.
 
-### 7. Build the semantic model and ontology layer
+### 7. Deploy the semantic model
 
-1. Build the Fabric/Power BI semantic model over curated Fabric tables.
-2. Add dimensions and measures for ticket volume, backlog, SLA status, aging tickets, average resolution time, reopen rate, category trends, and KB reuse.
-3. Build the scoped ontology layer from the semantic model/business entities.
-4. Validate representative operational and relationship questions.
+The semantic model is already defined as TMDL files in `servicenow-demo/ServiceNow_SemanticModel.SemanticModel/`.
 
-### 8. Deploy the Fabric Data Agent and Foundry orchestrator
+**Step-by-step deployment:**
+
+1. **Sync to Fabric via Git integration (Azure DevOps):**
+   - In the Fabric portal, open your workspace → Settings → Git integration.
+   - Connect your Azure DevOps repo (branch: `main`, folder: `/servicenow-demo`).
+   - Click **Sync** — the `ServiceNow_SemanticModel` item appears in the workspace.
+
+2. **Attach the Lakehouse:**
+   - Open the semantic model in the workspace.
+   - In **Model view** → **Properties** → **Data source**, connect it to your default Lakehouse.
+   - The model uses DirectLake mode — it reads directly from the Delta tables created by notebook 02.
+
+3. **Refresh the model:**
+   - Click **Refresh now** to validate that all 6 tables (`incidents`, `categories`, `assignment_groups`, `kb_articles`, `slas`, `incident_kb_links`) resolve correctly.
+   - Check the **Refresh history** tab — status should be "Completed".
+
+4. **Verify measures:**
+   - Open the model → Measures tab. You should see: Ticket Volume, Open Ticket Count, Backlog by Priority, Average Resolution Time, SLA Breach Count, Aging Open Tickets.
+   - Click any measure → **New quick measure** or use the DAX query view to test.
+
+5. **Validate relationships:**
+   - In **Model view**, confirm relationship lines between: incidents↔categories, incidents↔assignment_groups, slas↔incidents, incident_kb_links↔incidents, incident_kb_links↔kb_articles.
+
+### 8. Deploy the ontology layer
+
+The ontology is implemented as a Fabric notebook (`servicenow-demo/04_Ontology_Graph.Notebook/`).
+
+**Step-by-step deployment:**
+
+1. **Sync notebook to Fabric** (same Git integration as step 7 — it arrives automatically).
+2. **Attach the default Lakehouse** in the notebook's Explorer pane.
+3. **Run the notebook** — it reads curated tables and writes two new Delta tables:
+   - `ontology_nodes` — entity nodes (Incident, User, AssignmentGroup, Category, KnowledgeArticle, Attachment, ResolutionPattern)
+   - `ontology_edges` — relationships between entities (OPENED_BY, ASSIGNED_TO_GROUP, BELONGS_TO_CATEGORY, REFERENCES_KB, etc.)
+4. **Verify output:**
+   - In Lakehouse Explorer → Tables, confirm `ontology_nodes` and `ontology_edges` appear.
+   - Run `SELECT node_type, COUNT(*) FROM ontology_nodes GROUP BY node_type` in a SQL endpoint to validate.
+
+### 9. Deploy the Fabric Data Agent
+
+**Step-by-step deployment:**
+
+1. **Create the Data Agent:**
+   - In the Fabric portal workspace → **New** → **AI** → **Data agent**.
+   - Name: `ServiceNow Operations Agent`.
+   - Select `ServiceNow_SemanticModel` as the structured data source.
+
+2. **Configure scope:**
+   - Include tables: `incidents`, `slas`, `categories`, `assignment_groups`, `kb_articles`, `incident_kb_links`.
+   - Include measures: Ticket Volume, Open Ticket Count, Backlog by Priority, Average Resolution Time, SLA Breach Count, Aging Open Tickets.
+
+3. **Add synonyms** (in the Data Agent configuration):
+   - incidents = tickets, cases
+   - assignment group = support group, team
+   - category = topic, issue type
+   - KB article = knowledge article, runbook
+
+4. **Set the system prompt** (in Agent Instructions):
+   > You are the ServiceNow Operations Data Agent for the Autoliv Fabric POC. Answer only from the published semantic model. Prefer business-friendly names over technical keys. Use model measures when possible. Be explicit about filters and time windows. If the model doesn't contain the answer, say so.
+
+5. **Test the agent** with these sample questions:
+   - "How many open incidents are assigned to the Network Support group?"
+   - "What is the average resolution time for Priority 1 incidents?"
+   - "Show me the SLA breach rate by assignment group"
+   - "Which categories have the most open tickets?"
+
+6. **Save and share** the agent in the workspace.
+
+> 📖 Full configuration details: see `docs/DATA_AGENT_GUIDE.md`
+> 📖 Ontology design details: see `docs/ONTOLOGY.md`
+
+### 10. Deploy the Foundry orchestrator and retrieval layer
 
 1. Create the Fabric Data Agent against the semantic model or curated Fabric data.
 2. Configure the search/vector retrieval path for cleaned KB, notes, and resolution text.
