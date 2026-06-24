@@ -24,7 +24,7 @@ REQUEST_TIMEOUT_SECONDS = int(os.getenv("SERVICENOW_REQUEST_TIMEOUT_SECONDS", "6
 LOAD_TS_UTC = datetime.now(timezone.utc)
 LOAD_STAMP = LOAD_TS_UTC.strftime("%Y%m%dT%H%M%SZ")
 LOAD_DATE = LOAD_TS_UTC.strftime("%Y-%m-%d")
-LAKEHOUSE_ROOT = PurePosixPath("/lakehouse/default/Files/raw/servicenow")
+LAKEHOUSE_ROOT = PurePosixPath("Files/raw/servicenow")
 MANIFEST_TABLE = os.getenv("SERVICENOW_RAW_MANIFEST_TABLE", "raw_api_manifest")
 
 

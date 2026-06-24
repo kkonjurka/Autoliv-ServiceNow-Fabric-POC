@@ -14,7 +14,7 @@ from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.types import BooleanType, DoubleType, StringType, StructType
 
-RAW_ROOT = PurePosixPath("/lakehouse/default/Files/raw/servicenow")
+RAW_ROOT = PurePosixPath("Files/raw/servicenow")
 TARGET_DATABASE = os.getenv("SERVICENOW_CURATED_DATABASE", "")
 
 
