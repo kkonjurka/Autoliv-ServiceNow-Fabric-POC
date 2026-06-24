@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "05_Index_Search",
+    "description": "Reads curated Delta tables and pushes documents with embeddings into Azure AI Search indexes."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "7a4f18c2-d85b-4e9f-a231-96c041d72e4b"
+  }
+}

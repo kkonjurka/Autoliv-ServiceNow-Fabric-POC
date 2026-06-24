@@ -1,0 +1,211 @@
+{
+  "name": "kb-articles-index",
+  "fields": [
+    {
+      "name": "id",
+      "type": "Edm.String",
+      "key": true,
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
+      "name": "article_id",
+      "type": "Edm.String",
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
+      "name": "title",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false,
+      "analyzer": "en.microsoft"
+    },
+    {
+      "name": "content",
+      "type": "Edm.String",
+      "searchable": true,
+      "filterable": false,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false,
+      "analyzer": "en.microsoft"
+    },
+    {
+      "name": "category",
+      "type": "Edm.String",
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": true
+    },
+    {
+      "name": "subcategory",
+      "type": "Edm.String",
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": true
+    },
+    {
+      "name": "created_date",
+      "type": "Edm.DateTimeOffset",
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": true,
+      "facetable": false
+    },
+    {
+      "name": "updated_date",
+      "type": "Edm.DateTimeOffset",
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": true,
+      "facetable": false
+    },
+    {
+      "name": "view_count",
+      "type": "Edm.Int32",
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": true,
+      "facetable": false
+    },
+    {
+      "name": "useful_count",
+      "type": "Edm.Int32",
+      "searchable": false,
+      "filterable": true,
+      "retrievable": true,
+      "sortable": true,
+      "facetable": false
+    },
+    {
+      "name": "source_url",
+      "type": "Edm.String",
+      "searchable": false,
+      "filterable": false,
+      "retrievable": true,
+      "sortable": false,
+      "facetable": false
+    },
+    {
+      "name": "vector",
+      "type": "Collection(Edm.Single)",
+      "searchable": true,
+      "retrievable": false,
+      "filterable": false,
+      "sortable": false,
+      "facetable": false,
+      "dimensions": 1536,
+      "vectorSearchProfile": "kb-vector-profile"
+    }
+  ],
+  "vectorSearch": {
+    "algorithms": [
+      {
+        "name": "kb-hnsw",
+        "kind": "hnsw",
+        "hnswParameters": {
+          "metric": "cosine",
+          "m": 4,
+          "efConstruction": 400,
+          "efSearch": 500
+        }
+      }
+    ],
+    "profiles": [
+      {
+        "name": "kb-vector-profile",
+        "algorithm": "kb-hnsw",
+        "vectorizer": "kb-azure-openai-vectorizer"
+      }
+    ],
+    "vectorizers": [
+      {
+        "name": "kb-azure-openai-vectorizer",
+        "kind": "azureOpenAI",
+        "azureOpenAIParameters": {
+          "resourceUri": "${AZURE_OPENAI_ENDPOINT}",
+          "deploymentId": "text-embedding-ada-002",
+          "modelName": "text-embedding-ada-002"
+        }
+      }
+    ]
+  },
+  "semantic": {
+    "configurations": [
+      {
+        "name": "kb-semantic-config",
+        "prioritizedFields": {
+          "titleField": {
+            "fieldName": "title"
+          },
+          "prioritizedContentFields": [
+            { "fieldName": "content" }
+          ],
+          "prioritizedKeywordsFields": [
+            { "fieldName": "category" },
+            { "fieldName": "subcategory" }
+          ]
+        }
+      }
+    ]
+  },
+  "scoringProfiles": [
+    {
+      "name": "kb-relevance-boost",
+      "text": {
+        "weights": {
+          "title": 2.0,
+          "content": 1.0
+        }
+      },
+      "functions": [
+        {
+          "fieldName": "useful_count",
+          "boost": 2.0,
+          "type": "magnitude",
+          "magnitude": {
+            "boostingRangeStart": 50,
+            "boostingRangeEnd": 500,
+            "constantBoostBeyondRange": true
+          }
+        },
+        {
+          "fieldName": "view_count",
+          "boost": 1.5,
+          "type": "magnitude",
+          "magnitude": {
+            "boostingRangeStart": 100,
+            "boostingRangeEnd": 1000,
+            "constantBoostBeyondRange": true
+          }
+        },
+        {
+          "fieldName": "updated_date",
+          "boost": 1.2,
+          "type": "freshness",
+          "freshness": {
+            "boostingDuration": "P90D"
+          }
+        }
+      ],
+      "functionAggregation": "sum"
+    }
+  ]
+}

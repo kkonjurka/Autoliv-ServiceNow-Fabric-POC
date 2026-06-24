@@ -1,0 +1,20 @@
+name: servicenow-orchestrator
+description: >
+  Multi-agent orchestrator for Autoliv ServiceNow IT support. Routes structured
+  questions to the Fabric Data Agent, unstructured retrieval to Azure AI Search,
+  and document/attachment requests to the attachment metadata tool. Produces
+  grounded answers with citations, confidence levels, and human-review guidance.
+model: gpt-4o
+instructions_file: instructions.md
+tools:
+  - type: function
+    function: query_fabric_data_agent
+  - type: function
+    function: search_knowledge
+  - type: function
+    function: search_incidents
+  - type: function
+    function: get_attachment_metadata
+tool_choice: auto
+temperature: 0.2
+max_tokens: 2048

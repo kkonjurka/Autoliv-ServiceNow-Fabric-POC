@@ -1,0 +1,149 @@
+{
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "query_fabric_data_agent",
+        "description": "Ask the deployed Fabric Data Agent about structured ticket and semantic-model questions. Use for open tickets, SLA status, backlog, priority, category, aging, counts, and follow-up analysis.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "question": {
+              "type": "string",
+              "description": "Natural-language question for the Fabric Data Agent. Be specific about what operational data you need (e.g., 'How many open high-priority tickets are there in the Network category?')."
+            },
+            "filters": {
+              "type": "object",
+              "description": "Optional structured filters to narrow the query. Supported keys: priority (string, e.g. '1-Critical'), status (string, e.g. 'Open'), category (string), assignee_group (string), date_from (string ISO-8601), date_to (string ISO-8601).",
+              "additionalProperties": {
+                "type": ["string", "number", "boolean"]
+              }
+            },
+            "max_rows": {
+              "type": "integer",
+              "description": "Maximum number of ticket rows to return. Use lower values for summaries, higher values for detailed lists.",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10
+            }
+          },
+          "required": ["question"],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "search_knowledge",
+        "description": "Retrieve KB articles, work notes, resolution notes, and cleaned HTML content from the Azure AI Search knowledge index. Use for documented fixes, known issues, internal notes, and procedural guidance.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Issue description, error message, or search query text. More detail yields better results."
+            },
+            "ticket_id": {
+              "type": "string",
+              "description": "Optional current ticket ID to scope context. When provided, the current ticket is excluded from results."
+            },
+            "content_types": {
+              "type": "array",
+              "description": "Filter results to specific content types. Omit to search all types.",
+              "items": {
+                "type": "string",
+                "enum": ["kb_article", "work_note", "resolution_note", "cleaned_html"]
+              }
+            },
+            "top_k": {
+              "type": "integer",
+              "description": "Maximum number of results to return.",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 5
+            }
+          },
+          "required": ["query"],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "search_incidents",
+        "description": "Find similar historical incidents via vector search. Use when the user wants to know how a similar problem was resolved before, find prior incidents matching a symptom, or understand a historical resolution pattern.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Issue description, error message, or symptom text. The richer the description, the better the similarity matching."
+            },
+            "ticket_id": {
+              "type": "string",
+              "description": "Optional ID of the current open ticket. When provided, it is excluded from results to avoid self-matches."
+            },
+            "top_k": {
+              "type": "integer",
+              "description": "Maximum number of similar incidents to return.",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 5
+            }
+          },
+          "required": ["query"],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_attachment_metadata",
+        "description": "Retrieve metadata for attachments, documents, images, screenshots, log files, and scripts associated with a ServiceNow ticket. Use when the user asks about files, uploads, screenshots, logs, or documents attached to a ticket.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "ticket_id": {
+              "type": "string",
+              "description": "Primary ticket identifier (sys_id or number, e.g. INC0012345)."
+            },
+            "related_ticket_ids": {
+              "type": "array",
+              "description": "Optional list of related ticket IDs to include in the asset search.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "asset_types": {
+              "type": "array",
+              "description": "Filter to specific asset categories. Omit to retrieve all types.",
+              "items": {
+                "type": "string",
+                "enum": ["attachment", "document", "image", "screenshot", "log", "script", "url"]
+              }
+            },
+            "keywords": {
+              "type": "array",
+              "description": "Optional keywords to filter assets by file name or summary (e.g., ['error', 'vpn', 'network']).",
+              "items": {
+                "type": "string"
+              }
+            },
+            "top_k": {
+              "type": "integer",
+              "description": "Maximum number of assets to return.",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 10
+            }
+          },
+          "required": ["ticket_id"],
+          "additionalProperties": false
+        }
+      }
+    }
+  ]
+}
