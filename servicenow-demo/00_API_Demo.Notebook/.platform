@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "00_API_Demo",
+    "description": "Smoke-test notebook for the live mock ServiceNow API."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "45c7c74d-2f85-4fc4-a6ef-4b6e89963752"
+  }
+}
