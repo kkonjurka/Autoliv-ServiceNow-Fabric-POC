@@ -17,9 +17,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
+import pandas as pd
 import requests
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
@@ -58,6 +60,12 @@ def render_df(df: DataFrame, title: str, row_limit: int = 20) -> None:
         limited_df.show(row_limit, truncate=False)
 
 
+def safe_create_df(items: list[dict[str, Any]]) -> DataFrame:
+    """Create a Spark DataFrame from nested JSON-like rows without fragile type inference."""
+    json_rows = [json.dumps(item) for item in items]
+    return spark.read.json(spark.sparkContext.parallelize(json_rows))
+
+
 def field_inventory_df(endpoint_name: str, payload: dict[str, Any]) -> DataFrame:
     """Build a simple endpoint-to-field inventory from either list or detail payloads."""
     if "items" in payload and payload["items"]:
@@ -85,7 +93,7 @@ incident_items = incident_list_payload.get("items", [])
 incident_pagination = incident_list_payload.get("pagination", {})
 if not incident_items:
     raise ValueError("The incidents list endpoint is reachable but returned no records for the smoke test.")
-incident_list_df = spark.createDataFrame(incident_items)
+incident_list_df = safe_create_df(incident_items)
 
 print(
     f"Incidents list returned {len(incident_items)} records on page 1 "
@@ -131,7 +139,7 @@ api_summary_rows.append(
 
 selected_incident_id = incident_items[0]["id"]
 incident_detail_payload, incident_detail_status = fetch_json(f"/incidents/{selected_incident_id}")
-incident_detail_df = spark.createDataFrame([incident_detail_payload])
+incident_detail_df = safe_create_df([incident_detail_payload])
 
 print(f"Fetched detail for incident ID: {selected_incident_id}")
 
@@ -214,7 +222,7 @@ kb_items = kb_payload.get("items", [])
 kb_pagination = kb_payload.get("pagination", {})
 if not kb_items:
     raise ValueError("The KB articles endpoint is reachable but returned no records for the smoke test.")
-kb_df = spark.createDataFrame(kb_items)
+kb_df = safe_create_df(kb_items)
 
 print(
     f"KB articles returned {len(kb_items)} records on page 1 "
@@ -263,7 +271,7 @@ attachment_items = attachment_payload.get("items", [])
 attachment_pagination = attachment_payload.get("pagination", {})
 if not attachment_items:
     raise ValueError("The attachments endpoint is reachable but returned no records for the smoke test.")
-attachment_df = spark.createDataFrame(attachment_items)
+attachment_df = safe_create_df(attachment_items)
 
 print(
     f"Attachments returned {len(attachment_items)} records on page 1 "
@@ -305,7 +313,7 @@ api_summary_rows.append(
 # This final cell rolls the endpoint checks into one summary table so a reviewer can
 # quickly confirm connectivity, response status, and record counts at a glance.
 
-api_summary_df = spark.createDataFrame(api_summary_rows)
+api_summary_df = spark.createDataFrame(pd.DataFrame(api_summary_rows))
 
 render_df(
     api_summary_df.select(
