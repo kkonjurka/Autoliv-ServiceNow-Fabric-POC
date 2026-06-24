@@ -6,53 +6,104 @@
 
 from __future__ import annotations
 
-import importlib.util
+import html
 import os
-from pathlib import Path, PurePosixPath
+import re
+from html.parser import HTMLParser
+from pathlib import PurePosixPath
+from typing import Optional
 
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.types import BooleanType, DoubleType, StringType, StructType
+from pyspark.sql.functions import udf
 
 RAW_ROOT = PurePosixPath("Files/raw/servicenow")
 TARGET_DATABASE = os.getenv("SERVICENOW_CURATED_DATABASE", "")
 
+# --- Inlined HTML cleaning (from 03_HTML_to_Text) ---
 
-def _load_html_module():
-    candidate_paths: list[Path] = []
-
-    notebook_file = globals().get("__file__")
-    if notebook_file:
-        notebook_path = Path(notebook_file).resolve()
-        candidate_paths.append(notebook_path.parents[1] / "03_HTML_to_Text.Notebook" / "notebook-content.py")
-        if len(notebook_path.parents) > 2:
-            candidate_paths.append(notebook_path.parents[2] / "fabric" / "notebooks" / "03_html_to_text.py")
-
-    candidate_paths.extend(
-        [
-            Path.cwd() / "servicenow-demo" / "03_HTML_to_Text.Notebook" / "notebook-content.py",
-            Path.cwd().parent / "servicenow-demo" / "03_HTML_to_Text.Notebook" / "notebook-content.py",
-            Path.cwd() / "fabric" / "notebooks" / "03_html_to_text.py",
-            Path.cwd().parent / "fabric" / "notebooks" / "03_html_to_text.py",
-        ]
-    )
-
-    seen_paths: set[Path] = set()
-    for candidate_path in candidate_paths:
-        if candidate_path in seen_paths:
-            continue
-        seen_paths.add(candidate_path)
-        if candidate_path.exists():
-            spec = importlib.util.spec_from_file_location("html_to_text_notebook", candidate_path)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                return module
-    raise FileNotFoundError("Could not find 03_HTML_to_Text notebook content for import.")
+BLOCK_TAG_BREAKS = {
+    "br", "div", "li", "ol", "p", "section",
+    "table", "tbody", "td", "th", "thead", "tr", "ul",
+}
 
 
-html_utils = _load_html_module()
-html_utils.register_html_cleaning_udfs(spark)
+class _HtmlToTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self._parts: list[str] = []
+        self._suppress_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        normalized_tag = tag.lower()
+        if normalized_tag in {"script", "style"}:
+            self._suppress_depth += 1
+            return
+        if self._suppress_depth == 0 and normalized_tag in BLOCK_TAG_BREAKS:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized_tag = tag.lower()
+        if normalized_tag in {"script", "style"} and self._suppress_depth > 0:
+            self._suppress_depth -= 1
+            return
+        if self._suppress_depth == 0 and normalized_tag in BLOCK_TAG_BREAKS:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self._suppress_depth == 0 and data:
+            self._parts.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if self._suppress_depth == 0:
+            self._parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if self._suppress_depth == 0:
+            self._parts.append(f"&#{name};")
+
+    def get_text(self) -> str:
+        return "".join(self._parts)
+
+
+def normalize_whitespace(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.replace("\r", "\n")
+    normalized = re.sub(r"\n\s*\n+", "\n\n", normalized)
+    normalized = re.sub(r"[ \t]+", " ", normalized)
+    normalized = re.sub(r" *\n *", "\n", normalized)
+    normalized = normalized.strip()
+    return normalized or None
+
+
+def clean_plain_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    return normalize_whitespace(html.unescape(value))
+
+
+def clean_html_to_text(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    parser = _HtmlToTextParser()
+    parser.feed(value)
+    parser.close()
+    return clean_plain_text(parser.get_text())
+
+
+def clean_field(html_value: Optional[str], plain_text_value: Optional[str] = None) -> Optional[str]:
+    cleaned_html = clean_html_to_text(html_value)
+    if cleaned_html:
+        return cleaned_html
+    return clean_plain_text(plain_text_value)
+
+
+# Register UDFs
+spark.udf.register("clean_html_to_text", udf(clean_html_to_text, StringType()))
+spark.udf.register("clean_plain_text", udf(clean_plain_text, StringType()))
+spark.udf.register("clean_field", udf(lambda h, p: clean_field(h, p), StringType()))
 
 
 def qualify_table_name(table_name: str) -> str:
