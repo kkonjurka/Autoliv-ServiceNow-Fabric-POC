@@ -163,6 +163,32 @@ def write_manifest_table(spark: SparkSession, manifest_entries: list[ManifestEnt
     )
 
 
+def list_landed_files(root: PurePosixPath) -> list[str]:
+    fs = _notebook_fs()
+    if fs:
+        landed_files: list[str] = []
+
+        def _normalize(path: str) -> str:
+            return path.replace("/lakehouse/default/", "", 1) if path.startswith("/lakehouse/default/") else path
+
+        def _walk(path: str) -> None:
+            for entry in fs.ls(path):
+                if getattr(entry, "isDir", False):
+                    _walk(entry.path)
+                else:
+                    landed_files.append(_normalize(entry.path))
+
+        _walk(str(root))
+        return sorted(path for path in landed_files if f"load_date={LOAD_DATE}" in path)
+
+    local_root = Path.cwd() / Path(*root.parts[1:])
+    return sorted(
+        str(path.relative_to(Path.cwd())).replace("\\", "/")
+        for path in local_root.rglob("*.json")
+        if f"load_date={LOAD_DATE}" in str(path)
+    )
+
+
 incident_summaries, incident_manifest = ingest_paginated_collection(
     dataset_name="incidents",
     endpoint="/incidents",
@@ -209,6 +235,61 @@ print(
         "documents": len(documents),
     }
 )
+
+# CELL ********************
+
+landed_files = list_landed_files(LAKEHOUSE_ROOT)
+files_df = spark.createDataFrame(
+    [Row(file_path=file_path) for file_path in landed_files],
+    "file_path string",
+)
+
+entity_count_df = spark.createDataFrame(
+    [
+        Row(entity_type="incidents", record_count=len(incident_summaries)),
+        Row(entity_type="kb_articles", record_count=len(kb_articles)),
+        Row(entity_type="attachments", record_count=len(attachments)),
+        Row(entity_type="images", record_count=len(images)),
+        Row(entity_type="documents", record_count=len(documents)),
+    ]
+)
+
+sample_raw_path = None
+if incident_detail_manifest:
+    sample_raw_path = incident_detail_manifest[0].landed_path
+elif incident_manifest:
+    sample_raw_path = incident_manifest[0].landed_path
+
+print("Files written during this ingestion run:")
+display(files_df)
+
+print("Record counts by entity type:")
+display(entity_count_df)
+
+print("Sample raw payload preview:")
+if sample_raw_path:
+    sample_raw_df = spark.read.option("multiLine", True).json(sample_raw_path)
+    display(sample_raw_df.limit(5))
+else:
+    print("No sample raw payload was available for preview.")
+
+summary_message = (
+    f"✅ Ingestion complete. {len(incident_summaries)} incidents, "
+    f"{len(kb_articles)} KB articles, {len(attachments)} attachments, "
+    f"{len(images)} images, {len(documents)} documents ingested."
+)
+
+if "displayHTML" in globals():
+    displayHTML(
+        f"""
+        <div style="padding:12px 16px;border-radius:8px;background:#e8f5e9;border:1px solid #66bb6a;">
+          <strong>{summary_message}</strong><br/>
+          <span>Files written: {len(landed_files)}</span>
+        </div>
+        """
+    )
+
+print(summary_message)
 
 # METADATA ********************
 

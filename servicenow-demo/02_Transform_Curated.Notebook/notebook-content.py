@@ -493,16 +493,53 @@ write_delta(external_references, "external_references")
 write_delta(incident_kb_links, "incident_kb_links")
 write_delta(retrieval_documents, "retrieval_documents")
 
-print(
-    {
-        "incidents": incidents.count(),
-        "users": users.count(),
-        "kb_articles": kb_articles.count(),
-        "work_notes": work_notes.count(),
-        "resolution_notes": resolution_notes.count(),
-        "retrieval_documents": retrieval_documents.count(),
-    }
-)
+# CELL ********************
+
+table_counts = [
+    ("assignment_groups", assignment_groups.count()),
+    ("attachments", attachments.count()),
+    ("categories", categories.count()),
+    ("change_requests", change_requests.count()),
+    ("documents", documents.count()),
+    ("external_references", external_references.count()),
+    ("images", images.count()),
+    ("incident_changes", incident_changes.count()),
+    ("incident_kb_links", incident_kb_links.count()),
+    ("incidents", incidents.count()),
+    ("kb_articles", kb_articles.count()),
+    ("resolution_notes", resolution_notes.count()),
+    ("retrieval_documents", retrieval_documents.count()),
+    ("slas", slas.count()),
+    ("users", users.count()),
+    ("work_notes", work_notes.count()),
+]
+
+summary_df = spark.createDataFrame(table_counts, ["table_name", "record_count"]).orderBy("table_name")
+
+print("Curated incidents preview:")
+display(incidents.limit(5))
+
+print("Curated KB articles preview:")
+display(kb_articles.limit(5))
+
+print("Retrieval documents preview:")
+display(retrieval_documents.limit(5))
+
+print("Curated table counts:")
+display(summary_df)
+
+summary_message = f"✅ Transform complete. {len(table_counts)} tables written to Lakehouse."
+
+if "displayHTML" in globals():
+    displayHTML(
+        f"""
+        <div style="padding:12px 16px;border-radius:8px;background:#e3f2fd;border:1px solid #42a5f5;">
+          <strong>{summary_message}</strong>
+        </div>
+        """
+    )
+
+print(summary_message)
 
 # METADATA ********************
 
