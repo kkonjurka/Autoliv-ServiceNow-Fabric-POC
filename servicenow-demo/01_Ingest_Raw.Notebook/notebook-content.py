@@ -4,6 +4,11 @@
 
 """Fabric notebook to ingest raw ServiceNow-style API payloads into a Lakehouse."""
 
+# ## Notebook purpose
+# Run this notebook after the API smoke test to land raw JSON responses in the Lakehouse.
+# It is the raw-ingestion stage of the pipeline and creates the source files used by the
+# downstream curated transform notebook.
+
 from __future__ import annotations
 
 import json
@@ -27,6 +32,9 @@ LOAD_DATE = LOAD_TS_UTC.strftime("%Y-%m-%d")
 LAKEHOUSE_ROOT = PurePosixPath("Files/raw/servicenow")
 MANIFEST_TABLE = os.getenv("SERVICENOW_RAW_MANIFEST_TABLE", "raw_api_manifest")
 
+# ## Define the manifest record shape
+# Each manifest row tracks which endpoint was called, what file was written, and when
+# the extraction happened so later notebooks can audit the raw landing process.
 
 @dataclass(frozen=True)
 class ManifestEntry:
@@ -41,6 +49,7 @@ class ManifestEntry:
 
 
 def _notebook_fs():
+    """Return Fabric's filesystem helper when running in a notebook, else None locally."""
     try:
         from notebookutils import mssparkutils
 
@@ -50,6 +59,7 @@ def _notebook_fs():
 
 
 def fetch_json(relative_path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Fetch one JSON payload from the mock ServiceNow API."""
     query_string = f"?{urlencode(params)}" if params else ""
     request = Request(f"{DEFAULT_API_BASE_URL}{relative_path}{query_string}", headers={"Accept": "application/json"})
     with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
@@ -57,6 +67,7 @@ def fetch_json(relative_path: str, params: dict[str, Any] | None = None) -> dict
 
 
 def write_json_payload(relative_path: PurePosixPath, payload: dict[str, Any]) -> str:
+    """Write a raw JSON payload to Lakehouse Files or a local fallback path."""
     payload_text = json.dumps(payload, indent=2, sort_keys=True)
     target_path = str(relative_path)
     fs = _notebook_fs()
@@ -74,10 +85,12 @@ def write_json_payload(relative_path: PurePosixPath, payload: dict[str, Any]) ->
 
 
 def page_output_path(dataset_name: str, page_number: int) -> PurePosixPath:
+    """Build the landing path for one paginated list response."""
     return LAKEHOUSE_ROOT / dataset_name / "list" / f"load_date={LOAD_DATE}" / f"page_{page_number:04d}.json"
 
 
 def detail_output_path(dataset_name: str, entity_id: str) -> PurePosixPath:
+    """Build the landing path for one detail response using a filesystem-safe ID."""
     safe_id = entity_id.replace("/", "_")
     return LAKEHOUSE_ROOT / dataset_name / "detail" / f"load_date={LOAD_DATE}" / f"{safe_id}.json"
 
@@ -89,6 +102,7 @@ def ingest_paginated_collection(
     page_size: int = PAGE_SIZE,
     extra_params: dict[str, Any] | None = None,
 ) -> tuple[list[dict[str, Any]], list[ManifestEntry]]:
+    """Fetch every page for one list endpoint and return all items plus manifest rows."""
     page_number = 1
     items: list[dict[str, Any]] = []
     manifest: list[ManifestEntry] = []
@@ -121,6 +135,7 @@ def ingest_paginated_collection(
 
 
 def ingest_incident_details(incident_ids: Iterable[str]) -> list[ManifestEntry]:
+    """Fetch and land the full detail payload for every incident ID collected from the list API."""
     manifest: list[ManifestEntry] = []
     for incident_id in incident_ids:
         payload = fetch_json(f"/incidents/{incident_id}")
@@ -141,6 +156,7 @@ def ingest_incident_details(incident_ids: Iterable[str]) -> list[ManifestEntry]:
 
 
 def write_manifest_table(spark: SparkSession, manifest_entries: list[ManifestEntry]) -> None:
+    """Append manifest metadata so each raw-ingestion run is traceable in Delta."""
     manifest_rows = [
         Row(
             dataset_name=entry.dataset_name,
@@ -164,6 +180,7 @@ def write_manifest_table(spark: SparkSession, manifest_entries: list[ManifestEnt
 
 
 def list_landed_files(root: PurePosixPath) -> list[str]:
+    """List JSON files written for the current load date under the raw landing area."""
     fs = _notebook_fs()
     if fs:
         landed_files: list[str] = []
@@ -188,6 +205,9 @@ def list_landed_files(root: PurePosixPath) -> list[str]:
         if f"load_date={LOAD_DATE}" in str(path)
     )
 
+# ## Ingest the raw API entities
+# Fetch the incident list first, then use those IDs to fetch nested incident details.
+# The remaining collection endpoints are landed page-by-page as raw JSON snapshots.
 
 incident_summaries, incident_manifest = ingest_paginated_collection(
     dataset_name="incidents",
@@ -195,6 +215,7 @@ incident_summaries, incident_manifest = ingest_paginated_collection(
 )
 incident_detail_manifest = ingest_incident_details(item["id"] for item in incident_summaries)
 
+# These datasets supply the KB content and file metadata used by later curated transforms.
 kb_articles, kb_manifest = ingest_paginated_collection(
     dataset_name="kb_articles",
     endpoint="/kb-articles",
@@ -212,6 +233,7 @@ documents, document_manifest = ingest_paginated_collection(
     endpoint="/documents",
 )
 
+# Persist one manifest entry per landed file so the pipeline has an auditable load ledger.
 write_manifest_table(
     spark,
     [
@@ -237,6 +259,10 @@ print(
 )
 
 # CELL ********************
+
+# ## Review what landed in raw storage
+# This cell gives a simple run summary: which files were written, how many records came
+# from each entity type, and a sample raw payload to confirm the landing format.
 
 landed_files = list_landed_files(LAKEHOUSE_ROOT)
 files_df = spark.createDataFrame(
@@ -273,6 +299,7 @@ if sample_raw_path:
 else:
     print("No sample raw payload was available for preview.")
 
+# Present a clear completion message so notebook users know the raw load finished successfully.
 summary_message = (
     f"✅ Ingestion complete. {len(incident_summaries)} incidents, "
     f"{len(kb_articles)} KB articles, {len(attachments)} attachments, "

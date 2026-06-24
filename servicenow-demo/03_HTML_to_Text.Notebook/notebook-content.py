@@ -4,6 +4,11 @@
 
 """Fabric notebook helpers for HTML-to-text normalization."""
 
+# ## Notebook purpose
+# This notebook contains reusable text-cleaning helpers for the ServiceNow pipeline.
+# It supports the curated transform stage by turning HTML-rich notes and article content
+# into readable plain text that can be indexed, searched, and displayed cleanly.
+
 from __future__ import annotations
 
 import html
@@ -15,6 +20,9 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import udf
 from pyspark.sql.types import StringType
 
+# ## Define which HTML tags should create line breaks in the cleaned output
+# These tags represent block-like content, so the parser treats them as places where
+# readable plain text should start a new line.
 BLOCK_TAG_BREAKS = {
     "br",
     "div",
@@ -33,6 +41,7 @@ BLOCK_TAG_BREAKS = {
 
 
 class _HtmlToTextParser(HTMLParser):
+    """Collect readable text from HTML while skipping script and style content."""
     def __init__(self) -> None:
         super().__init__(convert_charrefs=False)
         self._parts: list[str] = []
@@ -71,6 +80,7 @@ class _HtmlToTextParser(HTMLParser):
 
 
 def normalize_whitespace(value: Optional[str]) -> Optional[str]:
+    """Clean up repeated spaces and blank lines in a text string."""
     if value is None:
         return None
     normalized = value.replace("\r", "\n")
@@ -82,12 +92,14 @@ def normalize_whitespace(value: Optional[str]) -> Optional[str]:
 
 
 def clean_plain_text(value: Optional[str]) -> Optional[str]:
+    """Decode entities in plain text and normalize the final spacing."""
     if value is None:
         return None
     return normalize_whitespace(html.unescape(value))
 
 
 def clean_html_to_text(value: Optional[str]) -> Optional[str]:
+    """Convert HTML to readable text and then normalize the result."""
     if value is None:
         return None
 
@@ -98,6 +110,7 @@ def clean_html_to_text(value: Optional[str]) -> Optional[str]:
 
 
 def clean_field(html_value: Optional[str], plain_text_value: Optional[str] = None) -> Optional[str]:
+    """Return the cleaned HTML version when present, else fall back to plain text."""
     cleaned_html = clean_html_to_text(html_value)
     if cleaned_html:
         return cleaned_html
@@ -105,6 +118,7 @@ def clean_field(html_value: Optional[str], plain_text_value: Optional[str] = Non
 
 
 def register_html_cleaning_udfs(spark: SparkSession) -> None:
+    """Register Spark UDFs so other notebooks can call the text cleaners in SQL expressions."""
     spark.udf.register("clean_html_to_text", udf(clean_html_to_text, StringType()))
     spark.udf.register("clean_plain_text", udf(clean_plain_text, StringType()))
     spark.udf.register(
@@ -113,6 +127,8 @@ def register_html_cleaning_udfs(spark: SparkSession) -> None:
     )
 
 
+# ## Register the helper functions automatically inside a live Fabric Spark session
+# This makes the UDFs immediately available when the notebook is attached to Spark.
 if "spark" in globals():
     register_html_cleaning_udfs(spark)  # type: ignore[name-defined]
 

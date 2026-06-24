@@ -7,6 +7,7 @@
 # ## Notebook purpose
 # Run this notebook first to prove the mock API is reachable from Fabric and to preview
 # the main data shapes before launching the full raw ingestion and curated transforms.
+# It sits at the start of the demo pipeline as a quick connectivity and schema check.
 
 # CELL ********************
 
@@ -36,6 +37,7 @@ api_summary_rows: list[dict[str, Any]] = []
 
 
 def fetch_json(relative_path: str, params: dict[str, Any] | None = None) -> tuple[dict[str, Any], int]:
+    """Return the JSON payload and HTTP status for one API call."""
     response = requests.get(
         f"{DEFAULT_API_BASE_URL}{relative_path}",
         params=params,
@@ -47,6 +49,7 @@ def fetch_json(relative_path: str, params: dict[str, Any] | None = None) -> tupl
 
 
 def render_df(df: DataFrame, title: str, row_limit: int = 20) -> None:
+    """Display a small preview table in Fabric or fall back to console output."""
     print(f"\n=== {title} ===")
     limited_df = df.limit(row_limit)
     try:
@@ -56,6 +59,7 @@ def render_df(df: DataFrame, title: str, row_limit: int = 20) -> None:
 
 
 def field_inventory_df(endpoint_name: str, payload: dict[str, Any]) -> DataFrame:
+    """Build a simple endpoint-to-field inventory from either list or detail payloads."""
     if "items" in payload and payload["items"]:
         field_names = sorted(payload["items"][0].keys())
     else:
@@ -108,6 +112,7 @@ render_df(
 )
 render_df(field_inventory_df("incidents_list", incident_list_payload), "Incident list field inventory", row_limit=50)
 
+# Capture the list-endpoint result so the final summary can show one row per endpoint tested.
 api_summary_rows.append(
     {
         "endpoint": "/incidents",
@@ -154,6 +159,7 @@ render_df(
     "Incident detail summary",
 )
 
+# Expand the nested work note array so reviewers can see the raw note HTML and plain text fields.
 render_df(
     incident_detail_df.select(
         F.explode_outer("work_notes").alias("work_note")
@@ -166,6 +172,7 @@ render_df(
     "Incident work note sample",
 )
 
+# Expand the related KB array so reviewers can see how incidents link to knowledge content.
 render_df(
     incident_detail_df.select(
         F.explode_outer("related_kb_articles").alias("kb_article")
@@ -178,6 +185,7 @@ render_df(
     "Incident-related KB sample",
 )
 
+# Add the detail-endpoint result to the notebook summary, including counts of nested child records.
 api_summary_rows.append(
     {
         "endpoint": f"/incidents/{selected_incident_id}",
@@ -230,6 +238,7 @@ render_df(
 )
 render_df(field_inventory_df("kb_articles", kb_payload), "KB article field inventory", row_limit=50)
 
+# Record the KB endpoint result for the end-of-notebook smoke-test summary.
 api_summary_rows.append(
     {
         "endpoint": "/kb-articles",
@@ -279,6 +288,7 @@ render_df(
 )
 render_df(field_inventory_df("attachments", attachment_payload), "Attachment field inventory", row_limit=50)
 
+# Record the attachment endpoint result so all API checks can be summarized together.
 api_summary_rows.append(
     {
         "endpoint": "/attachments",

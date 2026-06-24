@@ -4,6 +4,11 @@
 
 """Fabric notebook to transform raw landing JSON into curated structured and retrieval tables."""
 
+# ## Notebook purpose
+# Run this notebook after raw ingestion to turn nested ServiceNow-style JSON files into
+# curated Delta tables for reporting, semantic modeling, and AI retrieval scenarios.
+# It is the main shaping step between the raw Lakehouse landing zone and downstream consumers.
+
 from __future__ import annotations
 
 import html
@@ -21,6 +26,10 @@ from pyspark.sql.functions import udf
 RAW_ROOT = PurePosixPath("Files/raw/servicenow")
 TARGET_DATABASE = os.getenv("SERVICENOW_CURATED_DATABASE", "")
 
+# ## Reuse the HTML cleaning rules inside this transform
+# Incident descriptions, notes, and KB content arrive as HTML or mixed HTML/plain text.
+# These helpers normalize that content so the curated tables expose readable text fields.
+
 # --- Inlined HTML cleaning (from 03_HTML_to_Text) ---
 
 BLOCK_TAG_BREAKS = {
@@ -30,6 +39,7 @@ BLOCK_TAG_BREAKS = {
 
 
 class _HtmlToTextParser(HTMLParser):
+    """Convert HTML fragments into readable text while preserving paragraph-like breaks."""
     def __init__(self) -> None:
         super().__init__(convert_charrefs=False)
         self._parts: list[str] = []
@@ -68,6 +78,7 @@ class _HtmlToTextParser(HTMLParser):
 
 
 def normalize_whitespace(value: Optional[str]) -> Optional[str]:
+    """Collapse extra whitespace and blank lines in a text value."""
     if value is None:
         return None
     normalized = value.replace("\r", "\n")
@@ -79,12 +90,14 @@ def normalize_whitespace(value: Optional[str]) -> Optional[str]:
 
 
 def clean_plain_text(value: Optional[str]) -> Optional[str]:
+    """Decode HTML entities in already-plain text and normalize spacing."""
     if value is None:
         return None
     return normalize_whitespace(html.unescape(value))
 
 
 def clean_html_to_text(value: Optional[str]) -> Optional[str]:
+    """Strip HTML tags, keep readable line breaks, and return cleaned plain text."""
     if value is None:
         return None
     parser = _HtmlToTextParser()
@@ -94,6 +107,7 @@ def clean_html_to_text(value: Optional[str]) -> Optional[str]:
 
 
 def clean_field(html_value: Optional[str], plain_text_value: Optional[str] = None) -> Optional[str]:
+    """Prefer cleaned HTML content and fall back to the paired plain-text field when needed."""
     cleaned_html = clean_html_to_text(html_value)
     if cleaned_html:
         return cleaned_html
@@ -101,20 +115,24 @@ def clean_field(html_value: Optional[str], plain_text_value: Optional[str] = Non
 
 
 # Register UDFs
+# Make the text-cleaning helpers available in Spark expressions used throughout the notebook.
 spark.udf.register("clean_html_to_text", udf(clean_html_to_text, StringType()))
 spark.udf.register("clean_plain_text", udf(clean_plain_text, StringType()))
 spark.udf.register("clean_field", udf(lambda h, p: clean_field(h, p), StringType()))
 
 
 def qualify_table_name(table_name: str) -> str:
+    """Optionally prefix curated tables with the configured Fabric database name."""
     return f"{TARGET_DATABASE}.{table_name}" if TARGET_DATABASE else table_name
 
 
 def read_json(path: PurePosixPath) -> DataFrame:
+    """Read multiline raw JSON files from the Lakehouse landing area."""
     return spark.read.option("multiLine", True).json(str(path))
 
 
 def write_delta(df: DataFrame, table_name: str) -> None:
+    """Overwrite one curated Delta table with the DataFrame built in this notebook."""
     (
         df.write.mode("overwrite")
         .format("delta")
@@ -124,8 +142,12 @@ def write_delta(df: DataFrame, table_name: str) -> None:
 
 
 def deduplicate(df: DataFrame, keys: list[str]) -> DataFrame:
+    """Remove duplicate business keys created by repeated nested values across raw files."""
     return df.dropDuplicates(keys)
 
+# ## Load the raw JSON collections written by notebook 01
+# Each read targets one landing folder pattern so the transform can shape every raw entity
+# type into curated tables without hard-coding a specific load date.
 
 incident_detail_raw = read_json(RAW_ROOT / "incidents" / "detail" / "*" / "*.json")
 kb_articles_raw = read_json(RAW_ROOT / "kb_articles" / "list" / "*" / "*.json")
@@ -133,6 +155,9 @@ attachments_raw = read_json(RAW_ROOT / "attachments" / "list" / "*" / "*.json")
 images_raw = read_json(RAW_ROOT / "images" / "list" / "*" / "*.json")
 documents_raw = read_json(RAW_ROOT / "documents" / "list" / "*" / "*.json")
 
+# ## Flatten the core incident detail payload
+# This select keeps the top-level incident fields plus the nested arrays and structs that
+# will be broken out into separate curated tables later in the notebook.
 incident_details = incident_detail_raw.select(
     "id",
     "number",
@@ -169,6 +194,9 @@ incident_details = incident_detail_raw.select(
     "external_references",
 )
 
+# ## Build the curated KB article table
+# Extract article identity, category information, timestamps, and cleaned article text from
+# the paginated KB list payload so the result is ready for analytics and retrieval.
 kb_articles = deduplicate(
     kb_articles_raw.select(F.explode("items").alias("item"))
     .select(
@@ -188,6 +216,9 @@ kb_articles = deduplicate(
     ["kb_article_id"],
 )
 
+# ## Map incidents to related KB articles
+# This bridge table preserves the many-to-many links between incidents and knowledge
+# articles, including the relevance reason supplied by the source payload.
 incident_kb_articles = (
     incident_details.select("id", F.explode_outer("related_kb_articles").alias("kb"))
     .select(
@@ -198,6 +229,9 @@ incident_kb_articles = (
     .where(F.col("kb_article_id").isNotNull())
 )
 
+# ## Consolidate categories from incidents and KB articles
+# Category metadata appears in both payload families, so this union creates one reusable
+# category dimension keyed by category_id.
 categories = deduplicate(
     incident_details.select(
         F.col("category.id").alias("category_id"),
@@ -214,6 +248,9 @@ categories = deduplicate(
     ["category_id"],
 )
 
+# ## Create the assignment group dimension
+# Pull the group identifiers and descriptive fields referenced by incidents so reports can
+# slice tickets by owning support group.
 assignment_groups = deduplicate(
     incident_details.select(
         F.col("assignment_group.id").alias("assignment_group_id"),
@@ -224,6 +261,9 @@ assignment_groups = deduplicate(
     ["assignment_group_id"],
 )
 
+# ## Collect all distinct people mentioned across the raw payloads
+# Users appear as requesters, assignees, and note authors, so the notebook unions those
+# roles together into a single user dimension.
 requester_users = incident_details.select(
     F.col("requester.id").alias("user_id"),
     F.col("requester.full_name").alias("full_name"),
@@ -265,6 +305,9 @@ users = deduplicate(
     ["user_id"],
 )
 
+# ## Build the curated incidents fact table
+# This table keeps the main incident attributes, foreign keys to dimensions, timestamps,
+# and cleaned description/resolution text derived from the raw HTML and text fields.
 incidents = incident_details.select(
     F.col("id").alias("incident_id"),
     "number",
@@ -288,6 +331,9 @@ incidents = incident_details.select(
     "resolution_summary_html",
 )
 
+# ## Flatten incident work notes
+# Each nested work note becomes its own row with author, timestamp, raw HTML, and cleaned
+# plain-text content for downstream search and analysis.
 work_notes = (
     incident_details.select(F.col("id").alias("incident_id"), F.explode_outer("work_notes").alias("note"))
     .select(
@@ -301,6 +347,9 @@ work_notes = (
     .where(F.col("work_note_id").isNotNull())
 )
 
+# ## Flatten incident resolution notes
+# This mirrors the work-note logic for resolution notes so final fix details are queryable
+# and searchable outside the parent incident JSON document.
 resolution_notes = (
     incident_details.select(F.col("id").alias("incident_id"), F.explode_outer("resolution_notes").alias("note"))
     .select(
@@ -314,6 +363,9 @@ resolution_notes = (
     .where(F.col("resolution_note_id").isNotNull())
 )
 
+# ## Build the change request dimension
+# Incidents can reference changes, so this table stores the distinct change request
+# records extracted from the nested incident detail arrays.
 change_requests = deduplicate(
     incident_details.select(F.explode_outer("change_requests").alias("chg"))
     .select(
@@ -330,6 +382,8 @@ change_requests = deduplicate(
     ["change_request_id"],
 )
 
+# ## Map incidents to their related change requests
+# This bridge preserves which incidents are linked to which changes and how they are related.
 incident_changes = (
     incident_details.select(F.col("id").alias("incident_id"), F.explode_outer("change_requests").alias("chg"))
     .select(
@@ -340,6 +394,9 @@ incident_changes = (
     .where(F.col("change_request_id").isNotNull())
 )
 
+# ## Flatten SLA status records per incident
+# The source payload includes one or more SLA measurements for each incident; this table
+# makes those records queryable with typed numeric and boolean fields.
 slas = (
     incident_details.select(F.col("id").alias("incident_id"), F.explode_outer("slas").alias("sla"))
     .select(
@@ -356,6 +413,7 @@ slas = (
 
 
 def flatten_assets(raw_df: DataFrame, id_column_name: str) -> DataFrame:
+    """Flatten one paginated asset payload into a deduplicated attachment/image/document table."""
     return (
         raw_df.select(F.explode("items").alias("item"))
         .select(
@@ -375,11 +433,16 @@ def flatten_assets(raw_df: DataFrame, id_column_name: str) -> DataFrame:
         .dropDuplicates([id_column_name])
     )
 
-
+# ## Flatten attachment, image, and document metadata
+# These three tables share a common shape, so the helper above standardizes their fields
+# before dropping columns that do not apply to a specific asset type.
 attachments = flatten_assets(attachments_raw, "attachment_id").drop("width_px", "height_px")
 images = flatten_assets(images_raw, "image_id").drop("file_size_kb")
 documents = flatten_assets(documents_raw, "document_id").drop("width_px", "height_px")
 
+# ## Flatten external references attached to incidents
+# This captures URLs and external-system links so the semantic model and agent flows can
+# point users back to related source systems or evidence.
 external_references = (
     incident_details.select(F.col("id").alias("incident_id"), F.explode_outer("external_references").alias("ref"))
     .select(
@@ -393,8 +456,13 @@ external_references = (
     .where(F.col("external_reference_id").isNotNull())
 )
 
+# Keep only unique incident-to-KB relationships before writing the final bridge table.
 incident_kb_links = incident_kb_articles.dropDuplicates(["incident_id", "kb_article_id"])
 
+# ## Build a unified retrieval-document table
+# This unions cleaned incident descriptions, resolution summaries, work notes, resolution
+# notes, and KB article bodies into one text corpus. The metadata_json field keeps the
+# most useful structured context for each source document without changing the table shape.
 retrieval_documents = (
     incidents.select(
         F.concat(F.lit("incident:"), F.col("incident_id")).alias("retrieval_document_id"),
@@ -476,6 +544,9 @@ retrieval_documents = (
     .where(F.col("clean_text").isNotNull())
 )
 
+# ## Write all curated outputs to Delta tables
+# Each DataFrame becomes a standalone curated table that downstream semantic models,
+# notebooks, and agent experiences can query directly.
 write_delta(users, "users")
 write_delta(assignment_groups, "assignment_groups")
 write_delta(categories, "categories")
@@ -495,6 +566,9 @@ write_delta(retrieval_documents, "retrieval_documents")
 
 # CELL ********************
 
+# ## Summarize the curated outputs
+# Count the rows written to each curated table and preview the most important datasets so
+# notebook users can quickly verify the transform completed as expected.
 table_counts = [
     ("assignment_groups", assignment_groups.count()),
     ("attachments", attachments.count()),
